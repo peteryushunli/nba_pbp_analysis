@@ -29,9 +29,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from backend.routers import health, seasons, efg, ratings
+from backend.routers import health, seasons, efg, ratings, on_off
 
 app.include_router(health.router, prefix="/api")
 app.include_router(seasons.router, prefix="/api")
 app.include_router(efg.router, prefix="/api")
 app.include_router(ratings.router, prefix="/api")
+app.include_router(on_off.router, prefix="/api")

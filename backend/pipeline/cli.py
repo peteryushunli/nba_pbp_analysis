@@ -88,5 +88,21 @@ def full_refresh(
         process_season(season, force=True)
 
 
+@app.command()
+def process_on_off(
+    seasons: list[int] = typer.Option(
+        [], help="Specific seasons to process (empty = all available in CSV)"
+    ),
+    force: bool = typer.Option(False, help="Re-process even if output exists"),
+):
+    """Compute on/off floor efficiency from Kaggle PBP lineup data."""
+    from backend.pipeline.on_off_processor import process_kaggle_pbp
+
+    process_kaggle_pbp(
+        seasons=seasons if seasons else None,
+        force=force,
+    )
+
+
 if __name__ == "__main__":
     app()

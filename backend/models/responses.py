@@ -65,3 +65,33 @@ class WeightedRankEntry(BaseModel):
     weighted_fgm: float
     total_fga: int
     total_fgm: int
+
+
+class OnOffPlayerRow(BaseModel):
+    player_id: str
+    player_name: str
+    team: str
+    position: str  # G, F, C
+    gp: int
+    minutes_on: float
+
+    # Raw values (pts per 100 possessions)
+    off_rating_on: float
+    off_diff: float
+    def_rating_on: float
+    def_diff: float
+    net_on: float
+    net_diff: float
+
+    # Percentiles on differentials (0-100, 100 = best)
+    off_diff_pctl: float
+    def_diff_pctl: float
+    net_diff_pctl: float
+
+
+class OnOffResponse(BaseModel):
+    season: int
+    position_filter: str
+    min_gp: int
+    player_count: int
+    players: list[OnOffPlayerRow]

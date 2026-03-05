@@ -1,9 +1,7 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Layout } from "./components/Layout";
-import { EfgHeatmapPage } from "./pages/EfgHeatmapPage";
-import { RankingsPage } from "./pages/RankingsPage";
-import { RatingsPage } from "./pages/RatingsPage";
+import { OnOffPage } from "./pages/OnOffPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -20,9 +18,7 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route element={<Layout />}>
-            <Route index element={<EfgHeatmapPage />} />
-            <Route path="rankings" element={<RankingsPage />} />
-            <Route path="ratings" element={<RatingsPage />} />
+            <Route index element={<OnOffPage />} />
           </Route>
         </Routes>
       </BrowserRouter>

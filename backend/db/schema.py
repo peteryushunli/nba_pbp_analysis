@@ -122,6 +122,15 @@ def create_all_views(conn: duckdb.DuckDBPyConnection):
                                        union_by_name=true)
         """)
 
+    # --- On/Off efficiency stats ---
+    on_off_dir = data_dir / "processed" / "on_off"
+    if on_off_dir.exists() and list(on_off_dir.glob("*.parquet")):
+        conn.execute(f"""
+            CREATE OR REPLACE VIEW on_off_stats AS
+            SELECT * FROM read_parquet('{on_off_dir}/on_off_*.parquet',
+                                       union_by_name=true)
+        """)
+
     # --- eFG weight matrix ---
     _load_weight_matrix(conn)
 
