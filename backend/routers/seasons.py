@@ -39,7 +39,7 @@ def list_seasons():
     try:
         result = conn.execute("""
             SELECT
-                CAST(SUBSTR(CAST(GAME_ID AS VARCHAR), 2, 2) AS INTEGER) + 2001 AS season,
+                CAST(SUBSTR(LPAD(CAST(TRY_CAST(GAME_ID AS BIGINT) AS VARCHAR), 10, '0'), 4, 2) AS INTEGER) + 2001 AS season,
                 COUNT(DISTINCT GAME_ID) AS game_count
             FROM events
             WHERE is_fga = 1

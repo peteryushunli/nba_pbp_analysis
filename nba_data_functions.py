@@ -1,16 +1,16 @@
-import numpy as np
 import pandas as pd
-import os
 import urllib.request
 import tarfile
 from pathlib import Path
 from itertools import product
+from backend.metrics.game_state import elapsed_seconds
 
 
 def pbp_processing(pbp):
     """
     Process the initial play by play data to format the time columns and output a cleaner dataframe
     """
+    pbp = pbp.copy()
     #Convert ENDTIME into seconds
     pbp['END_TIME2'] = pd.to_datetime(pbp['ENDTIME'], format = '%M:%S')
     pbp['SECONDS_REMAINING'] = pbp['END_TIME2'].dt.second
@@ -44,29 +44,24 @@ def process_score_difference(game_df):
     #Create column for Time Elapsed in game_df as follows:
     # If PERIOD is betwee 1 - 4: time elapsed = (PERIOD-1)*12*60 + (12*60) - SECONDS_REMAINING - MINUTES_REMAINING*60
     # If PERIOD is greater than 4: time elapsed = 48*60 + (PERIOD-5)*5*60 + (5*60) - SECONDS_REMAINING - MINUTES_REMAINING*60
-    game_df['TIME_ELAPSED'] = np.where(game_df['PERIOD'] <= 4, (game_df['PERIOD']-1)*12*60 + (12*60) - game_df['SECONDS_REMAINING'] - game_df['MINUTES_REMAINING']*60, 48*60 + (game_df['PERIOD']-5)*5*60 + (5*60) - game_df['SECONDS_REMAINING'] - game_df['MINUTES_REMAINING']*60)
+    game_df = game_df.copy()
+    game_df['TIME_ELAPSED'] = elapsed_seconds(game_df['PERIOD'], game_df['MINUTES_REMAINING'] * 60 + game_df['SECONDS_REMAINING'])
 
     #Join the two dataframes on the TIME_ELAPSED column
     score_diff = score_diff.merge(game_df, how = 'left', on = 'TIME_ELAPSED')
     #Set the ABS_SCORE_DIFF at TIME_ELAPSED = 0 to be 0
     score_diff.loc[score_diff['TIME_ELAPSED'] == 0, 'ABS_SCORE_DIFF'] = 0
     #Fill rows with a missing ABS_SCORE_DIFF with the last known value backwards and then forwards
-    score_diff['ABS_SCORE_DIFF'] = score_diff['ABS_SCORE_DIFF'].fillna(method = 'bfill')
-    score_diff['ABS_SCORE_DIFF'] = score_diff['ABS_SCORE_DIFF'].fillna(method = 'ffill')
+    score_diff['ABS_SCORE_DIFF'] = score_diff['ABS_SCORE_DIFF'].bfill()
+    score_diff['ABS_SCORE_DIFF'] = score_diff['ABS_SCORE_DIFF'].ffill()
 
     return score_diff[['GAME_ID', 'TIME_ELAPSED', 'ABS_SCORE_DIFF']]
 
 def shot_detail_time_elapsed(shot_detail):
-    #Split data by regulation and overtime
-    regulation = shot_detail.loc[shot_detail['PERIOD'] <= 4]
-    overtime = shot_detail.loc[shot_detail['PERIOD'] > 4]
-
-    #Calculate time elapsed for every row
-    regulation['TIME_ELAPSED'] = (regulation['PERIOD'] - 1)*12*60 + (12*60 - regulation['MINUTES_REMAINING']*60 - regulation['SECONDS_REMAINING'])
-    overtime['TIME_ELAPSED'] = (48*60 + (overtime['PERIOD'] - 5)*5*60 + (5*60 - overtime['MINUTES_REMAINING']*60 - overtime['SECONDS_REMAINING']))
-
-    #Combine regulation and overtime
-    shot_detail = pd.concat([regulation, overtime])
+    """Add elapsed seconds without changing the input or reordering its rows."""
+    shot_detail = shot_detail.copy()
+    shot_detail['TIME_ELAPSED'] = elapsed_seconds(
+        shot_detail['PERIOD'], shot_detail['MINUTES_REMAINING'] * 60 + shot_detail['SECONDS_REMAINING'])
     return shot_detail
 
 def pbp_game_processing(pbp):
@@ -92,7 +87,7 @@ def full_shot_detail_output(shot_detail, pbp):
     #Process the initial datasets
     shot_detail_df = shot_detail_time_elapsed(shot_detail)
     pbp_df = pbp_game_processing(pbp)
-    pbp_df['ABS_SCORE_DIFF'] = pbp_df['ABS_SCORE_DIFF'].fillna(method = 'ffill')
+    pbp_df['ABS_SCORE_DIFF'] = pbp_df['ABS_SCORE_DIFF'].ffill()
 
     #Join the pbp data to have ABS SCORE DIFF
     shot_detail_full = shot_detail_df.merge(pbp_df, how = 'left', on = ['GAME_ID', 'TIME_ELAPSED'])

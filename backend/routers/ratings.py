@@ -11,7 +11,7 @@ from backend.db.queries import (
     SITUATIONAL_BLOCKS,
     TEAM_STATS,
     EVENTS_LEAGUE_AVERAGES,
-    _season_game_id_pattern,
+    season_filter_sql,
 )
 from backend.metrics.oliver_ratings import (
     PlayerBoxStats, TeamBoxStats, OpponentBoxStats, LeagueStats,
@@ -24,7 +24,7 @@ from backend.models.responses import RatingsResponse, PlayerRating
 router = APIRouter(tags=["ratings"])
 
 
-@router.get("/ratings", response_model=RatingsResponse)
+@router.get("/ratings", response_model=RatingsResponse, deprecated=True)
 def get_ratings(
     season: int = Query(..., ge=2003, le=2026),
     player_name: Optional[str] = Query(None),
@@ -34,7 +34,8 @@ def get_ratings(
     min_possessions: int = Query(20, ge=0),
 ):
     """
-    Get ORtg/DRtg for players, optionally filtered by situation.
+    Legacy approximate individual ratings, with inferred minutes/opponents.
+    Use /team-situations for measured team ORtg/DRtg by signed game state.
 
     Requires processed events data (from `nba-pipeline fetch` + `process`).
     """
@@ -49,10 +50,10 @@ def get_ratings(
             score_bucket=score_bucket, players=[],
         )
 
-    pattern = _season_game_id_pattern(season)
-    season_filter = f"AND GAME_ID LIKE '{pattern}'"
-    time_filter = f"AND TIME_BUCKET = '{time_bucket}'" if time_bucket else ""
-    score_filter = f"AND SCORE_BUCKET = '{score_bucket}'" if score_bucket else ""
+    season_filter = season_filter_sql(season)
+    time_filter = "AND TIME_BUCKET = ?" if time_bucket else ""
+    score_filter = "AND SCORE_BUCKET = ?" if score_bucket else ""
+    parameters = [value for value in [time_bucket, score_bucket] if value]
     filters = {
         "season_filter": season_filter,
         "time_filter": time_filter,
@@ -60,7 +61,7 @@ def get_ratings(
     }
 
     # Query player stats
-    player_df = conn.execute(SITUATIONAL_PLAYER_STATS.format(**filters)).fetchdf()
+    player_df = conn.execute(SITUATIONAL_PLAYER_STATS.format(**filters), parameters).fetchdf()
     if player_df.empty:
         return RatingsResponse(
             season=season, time_bucket=time_bucket,
@@ -68,9 +69,9 @@ def get_ratings(
         )
 
     # Query secondary stats (assists, steals, blocks attributed to other players)
-    assists_df = conn.execute(SITUATIONAL_ASSISTS.format(**filters)).fetchdf()
-    steals_df = conn.execute(SITUATIONAL_STEALS.format(**filters)).fetchdf()
-    blocks_df = conn.execute(SITUATIONAL_BLOCKS.format(**filters)).fetchdf()
+    assists_df = conn.execute(SITUATIONAL_ASSISTS.format(**filters), parameters).fetchdf()
+    steals_df = conn.execute(SITUATIONAL_STEALS.format(**filters), parameters).fetchdf()
+    blocks_df = conn.execute(SITUATIONAL_BLOCKS.format(**filters), parameters).fetchdf()
 
     # Merge secondary stats
     player_df = player_df.merge(assists_df, on="player_id", how="left")
@@ -79,7 +80,7 @@ def get_ratings(
     player_df = player_df.fillna(0)
 
     # Team stats
-    team_df = conn.execute(TEAM_STATS.format(**filters)).fetchdf()
+    team_df = conn.execute(TEAM_STATS.format(**filters), parameters).fetchdf()
 
     # League averages (unfiltered for the season)
     lg_df = conn.execute(EVENTS_LEAGUE_AVERAGES.format(

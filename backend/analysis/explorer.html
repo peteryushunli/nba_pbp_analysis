@@ -1,0 +1,63 @@
+<div id="nba-situations-explorer">
+  <h2>Team efficiency by game state</h2>
+  <div class="viz-controls">
+    <label class="form-label">Season<select class="form-select" id="ns-season"></select></label>
+    <label class="form-label">Team<select class="form-select" id="ns-team"></select></label>
+  </div>
+  <div class="text-small text-muted" id="ns-coverage" aria-live="polite"></div>
+  <h3>League-relative net rating · points per 100 possessions</h3>
+  <div class="table-responsive"><table class="table table-sm tabular-nums" id="ns-heatmap" aria-label="Relative net efficiency by signed margin and minutes remaining"></table></div>
+  <div class="text-small text-muted">Positive = better than league in the same margin/time cell. — = unavailable. * = fewer than 50 possessions on either side or 5 games. Minutes remaining; OT separate.</div>
+  <div class="card" id="ns-detail" aria-live="polite"></div>
+  <h3>Team profiles</h3>
+  <div class="table-responsive"><table class="table table-sm tabular-nums" id="ns-profiles"></table></div>
+  <div class="text-small text-muted">O / D = offensive / defensive possessions. Relative defense: positive = better. 95% intervals resample games. † = below 300 O, 300 D or 20 games.</div>
+  <h3>Leading versus pressure · league-relative gap</h3>
+  <div class="viz-controls"><label class="form-label">Comparison<select class="form-select" id="ns-contrast"></select></label></div>
+  <div class="table-responsive"><table class="table table-sm tabular-nums" id="ns-ranking"></table></div>
+  <div class="text-small text-muted">Largest positive estimates among eligible teams; intervals include zero unless marked. Positive gap = better while ahead. Opponent adjustment is a full-season sensitivity.</div>
+</div>
+<script>
+(() => {
+  const data = __DATA__;
+  for (const key of ['profiles','contrasts']) data[key]=data[key].map(row=>Object.fromEntries(data[key+'_fields'].map((f,i)=>[f,row[i]])));
+  data.cells=data.cells.map(c=>[c[0],c[1],data.margins[c[2]],data.times[c[3]],...c.slice(4)]);
+  const root = document.getElementById('nba-situations-explorer');
+  const selectSeason=root.querySelector('#ns-season'), selectTeam=root.querySelector('#ns-team'), selectContrast=root.querySelector('#ns-contrast');
+  const seasons=[...new Set(data.profiles.map(p=>p.season))].sort((a,b)=>b-a);
+  const teams=[...new Set(data.profiles.map(p=>p.team))].sort();
+  const contrasts=[...new Set(data.contrasts.map(p=>p.contrast))];
+  const options=(s,values,label=x=>x)=>{s.innerHTML=values.map(x=>`<option value="${x}">${label(x)}</option>`).join('');};
+  options(selectSeason,seasons,s=>`${s-1}–${String(s).slice(-2)}`);options(selectTeam,teams);options(selectContrast,contrasts);
+  selectTeam.value='MIN';
+  const num=x=>x===null||!Number.isFinite(x)?'—':(x>0?'+':'')+x.toFixed(1);
+  const raw=x=>x===null||!Number.isFinite(x)?'—':x.toFixed(1);
+  const table=(id,headers,rows)=>root.querySelector(id).innerHTML=`<thead><tr>${headers.map(h=>`<th scope="col">${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody>`;
+  function draw(){
+    const season=+selectSeason.value,team=selectTeam.value,contrast=selectContrast.value;
+    const cells=data.cells.filter(c=>c[0]===season&&c[1]===team),profiles=data.profiles.filter(p=>p.season===season&&p.team===team);
+    const coverage=data.coverage[season];
+    root.querySelector('#ns-coverage').textContent=`${team} · ${season-1}–${String(season).slice(-2)} · ${coverage.games.toLocaleString()} reconciled games / ${coverage.source_games.toLocaleString()} source games across the league · ${coverage.date_min} to ${coverage.date_max}`;
+    table('#ns-heatmap',['Team margin',...data.times],data.margins.slice().reverse().map(m=>`<tr><th scope="row">${m}</th>${data.times.map(t=>{
+      const c=cells.find(c=>c[2]===m&&c[3]===t);if(!c||c[9]===null)return '<td class="text-center">—</td>';
+      const small=Math.min(c[4],c[5])<50||c[6]<5;
+      const color=c[9]>=0?'--viz-series-1':'--viz-series-2';
+      const mix=10+Math.min(25,Math.abs(c[9]));
+      const fill=small?'var(--muted)':`color-mix(in srgb,var(${color}) ${mix}%,transparent)`;
+      return `<td class="text-center" style="background:${fill}"><button type="button" class="btn btn-ghost" data-cell="${data.margins.indexOf(m)},${data.times.indexOf(t)}" aria-label="${m}, ${t} minutes: net ${num(c[9])}; ${c[4]} offensive and ${c[5]} defensive possessions">${num(c[9])}${small?'*':''}</button></td>`;
+    }).join('')}</tr>`));
+    root.querySelector('#ns-detail').textContent='Select a cell for offense, defense and sample counts.';
+    root.querySelectorAll('[data-cell]').forEach(b=>b.addEventListener('click',()=>{
+      const [m,t]=b.dataset.cell.split(',').map(Number),c=cells.find(c=>c[2]===data.margins[m]&&c[3]===data.times[t]);
+      root.querySelector('#ns-detail').textContent=`${data.margins[m]} · ${data.times[t]} min · Relative offense ${num(c[7])}, defense ${num(c[8])}, net ${num(c[9])} · O ${c[4]}, D ${c[5]} possessions · ${c[6]} games`;
+    }));
+    table('#ns-profiles',['State','ORtg / DRtg','Relative O / D','Relative net [95% CI]','Vs usual','O / D poss'],profiles.map(p=>`<tr><th scope="row">${p.profile}${p.eligible?'':' †'}</th><td class="text-end">${raw(p.off_rating)} / ${raw(p.def_rating)}</td><td class="text-end">${num(p.off_relative)} / ${num(p.def_relative)}</td><td class="text-end">${num(p.relative_net)} [${num(p.ci_low)}, ${num(p.ci_high)}]</td><td class="text-end">${num(p.lift_vs_usual)}</td><td class="text-end">${p.off_n} / ${p.def_n}</td></tr>`));
+    const ranks=data.contrasts.filter(g=>g.season===season&&g.contrast===contrast&&g.eligible).sort((a,b)=>b.gap-a.gap).slice(0,8);
+    table('#ns-ranking',['Team','Gap [95% CI]','Opponent-adjusted gap'],ranks.map(g=>`<tr><th scope="row">${g.team}${g.positive_ci?' · CI > 0':''}</th><td class="text-end">${num(g.gap)} [${num(g.ci_low)}, ${num(g.ci_high)}]</td><td class="text-end">${num(g.schedule_adjusted_gap)}</td></tr>`));
+  }
+  function restore(state){const s=state?.modelContent;if(!s)return;if(seasons.includes(+s.season))selectSeason.value=s.season;if(teams.includes(s.team))selectTeam.value=s.team;if(contrasts.includes(s.contrast))selectContrast.value=s.contrast;}
+  restore(window.openai?.widgetState);draw();
+  [selectSeason,selectTeam,selectContrast].forEach(s=>s.addEventListener('change',()=>{draw();window.openai?.setWidgetState({modelContent:{season:+selectSeason.value,team:selectTeam.value,contrast:selectContrast.value}}).catch(()=>{});}));
+  window.addEventListener('openai:set_globals',e=>{restore(e.detail?.globals?.widgetState);draw();});
+})();
+</script>

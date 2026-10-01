@@ -1,0 +1,15 @@
+{
+  "source": "https://www.nba.com/news/2026-nba-playoffs-schedule",
+  "source_updated": "2026-06-14",
+  "verified": "2026-10-01",
+  "note": "Later-round results missing from the bulk CDN archive. Each game is winner, winning score, losing score. Home order is the NBA 2-2-1-1-1 series format; matched archived games are checked before adding missing games.",
+  "series": [
+    {"id":"004250020","home":"DET","away":"CLE","games":[["DET",111,101],["DET",107,97],["CLE",116,109],["CLE",112,103],["CLE",117,113],["DET",115,94],["CLE",125,94]]},
+    {"id":"004250021","home":"NYK","away":"PHI","games":[["NYK",137,98],["NYK",108,102],["NYK",108,94],["NYK",144,114]]},
+    {"id":"004250022","home":"OKC","away":"LAL","games":[["OKC",108,90],["OKC",125,107],["OKC",131,108],["OKC",115,110]]},
+    {"id":"004250023","home":"SAS","away":"MIN","games":[["MIN",104,102],["SAS",133,95],["SAS",115,108],["MIN",114,109],["SAS",126,97],["SAS",139,109]]},
+    {"id":"004250030","home":"NYK","away":"CLE","games":[["NYK",115,104],["NYK",109,93],["NYK",121,108],["NYK",130,93]]},
+    {"id":"004250031","home":"OKC","away":"SAS","games":[["SAS",122,115],["OKC",122,113],["OKC",123,108],["SAS",103,82],["OKC",127,114],["SAS",118,91],["SAS",111,103]]},
+    {"id":"004250040","home":"SAS","away":"NYK","games":[["NYK",105,95],["NYK",105,104],["SAS",115,111],["NYK",107,106],["NYK",94,90]]}
+  ]
+}

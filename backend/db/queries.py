@@ -1,21 +1,6 @@
 """Named SQL query templates for DuckDB."""
 
 
-def _season_game_id_pattern(season: int) -> str:
-    """
-    Build a GAME_ID LIKE pattern for a season.
-
-    Full NBA game IDs are 10 digits: '002XXYYYY0' where XX = season start year suffix.
-    But in legacy CSVs, leading '00' was stripped (stored as int), so they're 8 digits:
-      '2XXYYYY0' e.g., 20300001 for 2003-04 season.
-    In new API data (stored as string), they keep the 10-digit form.
-
-    This returns a pattern that works for BOTH formats via LIKE.
-    """
-    season_code = str(season - 1)[2:]  # 2025 -> '24'
-    return f"%2{season_code}%"
-
-
 def season_game_id_range(season: int) -> tuple[int, int]:
     """
     Return (lo, hi) GAME_ID range for a season.
@@ -38,7 +23,7 @@ def season_filter_sql(season: int, game_id_col: str = "GAME_ID") -> str:
     Uses a numeric range check which is fastest for BIGINT columns.
     """
     lo, hi = season_game_id_range(season)
-    return f"AND {game_id_col} BETWEEN {lo} AND {hi}"
+    return f"AND TRY_CAST({game_id_col} AS BIGINT) BETWEEN {lo} AND {hi}"
 
 
 # ============================================================
@@ -212,7 +197,7 @@ TEAM_STATS = """
 
 LEGACY_SEASONS = """
     SELECT
-        CAST(SUBSTR(CAST(GAME_ID AS VARCHAR), 2, 2) AS INTEGER) + 2001 AS season,
+        CAST(SUBSTR(LPAD(CAST(TRY_CAST(GAME_ID AS BIGINT) AS VARCHAR), 10, '0'), 4, 2) AS INTEGER) + 2001 AS season,
         COUNT(DISTINCT GAME_ID) AS game_count
     FROM legacy_shots
     GROUP BY season

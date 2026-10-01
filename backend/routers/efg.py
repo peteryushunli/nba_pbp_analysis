@@ -38,14 +38,20 @@ def get_efg_heatmap(
     """Get eFG% heatmap data (time buckets x score buckets)."""
     conn = get_connection()
 
+    parameters = []
+    if player_name:
+        parameters.append(player_name)
+    if team_name:
+        parameters.append(team_name)
+
     # Decide which data source to use
     use_legacy = _has_view(conn, "legacy_shots_bucketed")
     use_events = _has_view(conn, "events_bucketed")
 
     if use_legacy:
         sf = season_filter_sql(season)
-        player_filter = f"AND PLAYER_NAME = '{player_name}'" if player_name else ""
-        team_filter = f"AND TEAM_NAME = '{team_name}'" if team_name else ""
+        player_filter = "AND PLAYER_NAME = ?" if player_name else ""
+        team_filter = "AND TEAM_NAME = ?" if team_name else ""
 
         query = LEGACY_EFG_HEATMAP.format(
             season_filter=sf,
@@ -55,8 +61,8 @@ def get_efg_heatmap(
         lg_query = LEGACY_LEAGUE_AVERAGES.format(season_filter=sf)
     elif use_events:
         sf = season_filter_sql(season)
-        player_filter = f"AND PLAYER1_NAME = '{player_name}'" if player_name else ""
-        team_filter = f"AND PLAYER1_TEAM_ABBREVIATION = '{team_name}'" if team_name else ""
+        player_filter = "AND PLAYER1_NAME = ?" if player_name else ""
+        team_filter = "AND PLAYER1_TEAM_ABBREVIATION = ?" if team_name else ""
 
         query = EVENTS_EFG_HEATMAP.format(
             season_filter=sf,
@@ -70,7 +76,7 @@ def get_efg_heatmap(
             cells=[], league_avg_efg=0.0,
         )
 
-    result = conn.execute(query).fetchdf()
+    result = conn.execute(query, parameters).fetchdf()
 
     # League average eFG%
     lg_result = conn.execute(lg_query).fetchdf()

@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-import os
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -12,7 +11,8 @@ def ingest_data(season):
     return df
 
 def clean_pbp_data(df):
-    '''Change Shot Values'''
+    '''Return a cleaned copy for the legacy absolute-margin shooting notebooks.'''
+    df = df.copy()
     #Create shot value column
     df['SHOT_VALUE'] = df['3PT_ATTEMPTED_FLAG'].apply(lambda x: 3 if x == 1 else 2) 
     #Separate 3 point makes from 2 point makes
@@ -33,6 +33,7 @@ def clean_pbp_data(df):
 def create_buckets(df):
     ''' This function will intake the pbp data and create bucketes from ABS_SCORE_DIFF and RAW_MINUTES_REMAINING'''
     #Create buckets for the column ABS_SCORE_DIFF: 0-5, 6-10, 11-15, 16-20, 21-25, 26+ 
+    df = df.copy()
     df['ABS_SCORE_DIFF_BUCKETS'] = pd.cut(df['ABS_SCORE_DIFF'], bins = [-1, 5, 10, 15, 20, 100],
                                         labels = ['0-5', '6-10', '11-15', '16-20', '21+'])
     #Create buckets for RAW_MINUTES_REMAINING in 4 minute intervals starting from 48 minutes
@@ -51,10 +52,9 @@ def aggregate_data(df, player_name = None, team_name = None):
     else: df = df
 
     #Aggregate the data
-    agg_df = df.groupby(['RAW_MINUTES_REMAINING_BUCKETS', 'ABS_SCORE_DIFF_BUCKETS'], as_index = False).sum()
+    agg_df = df.groupby(['RAW_MINUTES_REMAINING_BUCKETS', 'ABS_SCORE_DIFF_BUCKETS'], as_index=False, observed=False)[['FGA', 'FGM', '3PA', '3PM']].sum()
     #Calculate the EFG
-    agg_df['EFG'] = round((agg_df['FGM'] + 0.5*agg_df['3PM']) / agg_df['FGA'],3)
-    agg_df.drop(columns = ['PLAYER_NAME', 'TEAM_NAME'], inplace = True)
+    agg_df['EFG'] = round((agg_df['FGM'] + 0.5*agg_df['3PM']) / agg_df['FGA'].replace(0, np.nan),3)
 
     return agg_df
 
@@ -158,7 +158,7 @@ def efg_scorediff_heatmap(season, team_name = None, player_name = None):
     df = ingest_data(season)
     #Run helper functions to manipulate the data
     clean_df = clean_pbp_data(df)
-    clean_df = create_buckets(df)
+    clean_df = create_buckets(clean_df)
     agg_df = aggregate_data(clean_df, player_name = player_name, team_name = team_name)
     agg_df_pivot = pivot_efg(agg_df)
     pivot_fraction_str = pivot_attempt_fraction(agg_df)

@@ -1,10 +1,10 @@
 """Transform raw PBP data into enriched, analysis-ready Parquet files."""
 
 import pandas as pd
-import numpy as np
 from pathlib import Path
 
 from backend.config import settings
+from backend.metrics.game_state import clock_seconds, elapsed_seconds
 
 # EVENTMSGTYPE codes from NBA PBP
 EVENT_MADE_SHOT = 1
@@ -29,50 +29,21 @@ def parse_game_clock(pctimestring: pd.Series, period: pd.Series) -> pd.Series:
     Regulation: periods 1-4 are 12 min each (720s).
     Overtime: periods 5+ are 5 min each (300s).
     """
-    parts = pctimestring.str.split(":", expand=True).astype(int)
-    minutes_remaining = parts[0]
-    seconds_remaining = parts[1]
-
-    reg_mask = period <= 4
-    time_elapsed = pd.Series(0, index=period.index, dtype=int)
-
-    # Regulation: (period-1)*720 + (720 - remaining)
-    time_elapsed[reg_mask] = (
-        (period[reg_mask] - 1) * 720
-        + 720 - minutes_remaining[reg_mask] * 60 - seconds_remaining[reg_mask]
-    )
-
-    # Overtime: 48*60 + (period-5)*300 + (300 - remaining)
-    ot_mask = ~reg_mask
-    time_elapsed[ot_mask] = (
-        2880
-        + (period[ot_mask] - 5) * 300
-        + 300 - minutes_remaining[ot_mask] * 60 - seconds_remaining[ot_mask]
-    )
-
-    return time_elapsed
+    return elapsed_seconds(period, clock_seconds(pctimestring))
 
 
-def parse_score_margin(score_margin: pd.Series) -> pd.Series:
+def parse_score_margin(score_margin: pd.Series, game_ids: pd.Series | None = None,
+                       *, absolute: bool = True) -> pd.Series:
+    """Parse post-event home margin; forward-fill only within each game.
+
+    Pass absolute=False to retain direction. Callers analyzing performance should
+    shift the signed result within each game to use the pre-event state.
     """
-    Convert SCOREMARGIN column to ABS_SCORE_DIFF.
-
-    SCOREMARGIN values: 'TIE', signed int strings ('+5', '-3'), or NaN.
-    Forward-fills NaN values, starts game at 0.
-    """
-    def _parse(val):
-        if pd.isna(val) or val == "" or val is None:
-            return np.nan
-        if str(val).upper() == "TIE":
-            return 0
-        try:
-            return abs(int(val))
-        except (ValueError, TypeError):
-            return np.nan
-
-    result = score_margin.apply(_parse)
-    result = result.ffill().fillna(0).astype(int)
-    return result
+    values = pd.to_numeric(score_margin.astype("string").str.upper().replace("TIE", "0"),
+                           errors="coerce")
+    values = values.ffill() if game_ids is None else values.groupby(game_ids).ffill()
+    values = values.fillna(0).astype(int)
+    return values.abs() if absolute else values
 
 
 def classify_events(df: pd.DataFrame) -> pd.DataFrame:
@@ -111,7 +82,18 @@ def classify_events(df: pd.DataFrame) -> pd.DataFrame:
 
     # Rebounds
     is_rebound = etype == EVENT_REBOUND
-    is_off_reb = desc_upper.str.contains(r"OFF\.|OFFENSIVE", na=False, regex=True)
+    # NBA descriptions report cumulative "Off:N Def:N" on EVERY rebound.
+    # Infer ownership from the last shot/free throw, never from that text.
+    team = df.get("PLAYER1_TEAM_ID", df.get("PLAYER1_TEAM_ABBREVIATION"))
+    if is_rebound.any() and team is None:
+        raise ValueError("Rebound classification requires PLAYER1 team identity")
+    if team is not None:
+        shooting_team = team.where(df["is_fga"].eq(1) | df["is_fta"].eq(1))
+        groups = df.get("GAME_ID", pd.Series(0, index=df.index))
+        shooting_team = shooting_team.groupby(groups).ffill()
+        is_off_reb = team.eq(shooting_team) & team.notna()
+    else:
+        is_off_reb = pd.Series(False, index=df.index)
     df["is_oreb"] = (is_rebound & is_off_reb).astype(int)
     df["is_dreb"] = (is_rebound & ~is_off_reb).astype(int)
 
@@ -143,11 +125,13 @@ def transform_pbp_season(raw_pbp: pd.DataFrame) -> pd.DataFrame:
     Input: Raw PlayByPlayV2 DataFrame.
     Output: Enriched DataFrame ready for Parquet with event classification flags.
     """
-    df = raw_pbp.copy()
+    df = raw_pbp.sort_values(["GAME_ID", "EVENTNUM"], kind="stable").copy()
 
     # Parse time and score
     df["TIME_ELAPSED"] = parse_game_clock(df["PCTIMESTRING"], df["PERIOD"])
-    df["ABS_SCORE_DIFF"] = parse_score_margin(df["SCOREMARGIN"])
+    signed = parse_score_margin(df["SCOREMARGIN"], df["GAME_ID"], absolute=False)
+    df["HOME_SCORE_MARGIN_BEFORE"] = signed.groupby(df["GAME_ID"]).shift().fillna(0).astype(int)
+    df["ABS_SCORE_DIFF"] = df["HOME_SCORE_MARGIN_BEFORE"].abs()
 
     # Parse clock into minutes/seconds remaining
     parts = df["PCTIMESTRING"].str.split(":", expand=True).astype(int)
@@ -160,7 +144,7 @@ def transform_pbp_season(raw_pbp: pd.DataFrame) -> pd.DataFrame:
     keep_cols = [
         "GAME_ID", "EVENTNUM", "EVENTMSGTYPE", "PERIOD",
         "TIME_ELAPSED", "MINUTES_REMAINING", "SECONDS_REMAINING",
-        "ABS_SCORE_DIFF",
+        "ABS_SCORE_DIFF", "HOME_SCORE_MARGIN_BEFORE", "PLAYER1_TEAM_ID",
         "PLAYER1_ID", "PLAYER1_NAME", "PLAYER1_TEAM_ABBREVIATION",
         "PLAYER2_ID", "PLAYER2_NAME", "PLAYER2_TEAM_ABBREVIATION",
         "PLAYER3_ID", "PLAYER3_NAME",

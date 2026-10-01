@@ -5,6 +5,8 @@ from pathlib import Path
 from tqdm import tqdm
 
 from backend.config import settings
+from backend.metrics.game_state import elapsed_seconds
+from backend.pipeline.transformer import parse_score_margin
 
 
 def convert_legacy_csvs(
@@ -77,9 +79,8 @@ def convert_shot_chart_to_legacy(
     df["3PT_ATTEMPTED_FLAG"] = (df["SHOT_TYPE"] == "3PT Field Goal").astype(int)
 
     # Compute TIME_ELAPSED (seconds from start of game)
-    period_offset = (df["PERIOD"].clip(upper=4) - 1) * 12 * 60
-    time_in_period = (12 * 60) - (df["MINUTES_REMAINING"] * 60 + df["SECONDS_REMAINING"])
-    df["TIME_ELAPSED"] = period_offset + time_in_period
+    df["TIME_ELAPSED"] = elapsed_seconds(
+        df["PERIOD"], df["MINUTES_REMAINING"] * 60 + df["SECONDS_REMAINING"])
 
     # Convert GAME_ID from string '002XXYYYY' to int (strip leading '00')
     df["GAME_ID"] = df["GAME_ID"].astype(str).str.lstrip("0").astype(int)
@@ -89,7 +90,9 @@ def convert_shot_chart_to_legacy(
     if pbp_path.exists():
         pbp = pd.read_parquet(pbp_path, columns=["GAME_ID", "EVENTNUM", "SCOREMARGIN"])
         pbp["GAME_ID"] = pbp["GAME_ID"].astype(str).str.lstrip("0").astype(int)
-        pbp["ABS_SCORE_DIFF"] = pbp["SCOREMARGIN"].apply(_parse_score_margin)
+        pbp = pbp.sort_values(["GAME_ID", "EVENTNUM"])
+        margin = parse_score_margin(pbp["SCOREMARGIN"], pbp["GAME_ID"], absolute=False)
+        pbp["ABS_SCORE_DIFF"] = margin.groupby(pbp["GAME_ID"]).shift().fillna(0).abs()
         pbp = pbp[["GAME_ID", "EVENTNUM", "ABS_SCORE_DIFF"]].dropna(subset=["ABS_SCORE_DIFF"])
 
         df = df.merge(
@@ -116,20 +119,3 @@ def convert_shot_chart_to_legacy(
     out.to_parquet(out_path, engine="pyarrow", compression="snappy", index=False)
     print(f"Saved {len(out)} shots to {out_path}")
     return out_path
-
-
-def _parse_score_margin(val) -> float | None:
-    """Parse SCOREMARGIN: 'TIE' -> 0, signed int -> abs(), NaN -> None."""
-    if pd.isna(val):
-        return None
-    if isinstance(val, str):
-        if val.upper() == "TIE":
-            return 0.0
-        try:
-            return abs(int(val))
-        except ValueError:
-            return None
-    try:
-        return abs(float(val))
-    except (ValueError, TypeError):
-        return None

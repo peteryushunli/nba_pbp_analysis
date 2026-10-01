@@ -1,0 +1,6 @@
+signal,adjacent_team_seasons,pearson_correlation
+front_running_gap,295,0.11705000731210748
+big_deficit_lift,295,0.20665719760169468
+close_lift,295,0.11560686517950058
+clutch_lift,295,0.07396731456150359
+late_trailing_lift,295,0.06815528967932914
